@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>보험 준비금 차감 메커니즘</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f4f0;color:#2c2c2a;padding:24px;max-width:780px;margin:0 auto}
+h1{font-size:16px;font-weight:500;margin-bottom:4px;color:#2c2c2a}
+.subtitle{font-size:12px;color:#73726c;margin-bottom:20px}
+.cc{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}
+.cc>div{background:#fff;border-radius:8px;padding:10px;text-align:center;border:0.5px solid rgba(0,0,0,0.08)}
+.cc .l{font-size:11px;color:#73726c;margin-bottom:3px}
+.cc .v{font-size:18px;font-weight:500;color:#2c2c2a}
+.section-label{font-size:11px;color:#73726c;margin-bottom:4px}
+.tl{position:relative;height:40px;border-radius:6px;overflow:hidden;margin:6px 0 2px}
+.tl-seg{position:absolute;height:100%;display:flex;align-items:center;justify-content:center;font-weight:500}
+.tl-ages{position:relative;height:18px;font-size:10px;color:#73726c;margin-bottom:16px}
+.tl-ages span{position:absolute}
+.concept{border-left:3px solid #1D9E75;padding:12px 16px;margin-bottom:18px;font-size:13px;line-height:1.9;background:#fff;border-radius:0 8px 8px 0}
+.concept strong{color:#1D9E75}
+.concept em{color:#D85A30;font-style:normal;font-weight:500}
+.chart-wrap{position:relative;width:100%;height:230px;background:#fff;border-radius:8px;padding:12px 12px 8px;border:0.5px solid rgba(0,0,0,0.08);margin-bottom:12px}
+.slider-row{display:flex;align-items:center;gap:12px;margin:8px 0}
+.slider-row label{font-size:12px;color:#73726c;white-space:nowrap}
+.slider-row input{flex:1}
+.slider-row span{font-size:14px;font-weight:500;min-width:32px;text-align:right;color:#2c2c2a}
+.dp{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.dp>div{background:#fff;border-radius:8px;padding:14px;border:0.5px solid rgba(0,0,0,0.08)}
+.dl{font-size:11px;color:#73726c;margin-bottom:5px}
+.dv{font-size:20px;font-weight:500;margin-bottom:10px}
+.bar-row{display:flex;align-items:center;gap:8px;margin:5px 0;font-size:12px;color:#2c2c2a}
+.bar-label{min-width:76px;flex-shrink:0;color:#73726c}
+.bar-fill{height:13px;border-radius:3px;min-width:3px;flex-shrink:0}
+.divider{border:none;border-top:0.5px solid rgba(0,0,0,0.1);margin:8px 0}
+.total-line{font-size:12px;font-weight:500;margin-top:2px}
+.legend{display:flex;gap:16px;margin-top:14px;font-size:11px;color:#73726c;flex-wrap:wrap}
+.leg-dot{width:10px;height:10px;border-radius:2px;display:inline-block;margin-right:4px}
+input[type=range]{-webkit-appearance:none;height:4px;border-radius:2px;background:#e0ddd6;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:#1D9E75;cursor:pointer}
+</style>
+</head>
+<body>
+
+<h1>보험 납입기간 종료 후 준비금 차감 구조</h1>
+<p class="subtitle">납입한 보험료가 80세 보장을 위해 미리 받아둔 돈인 이유</p>
+
+<div class="cc">
+  <div><div class="l">가입 연령</div><div class="v">30세</div></div>
+  <div><div class="l">현재 연령</div><div class="v" style="color:#BA7517">46세</div></div>
+  <div><div class="l">납입 기간</div><div class="v">20년</div></div>
+  <div><div class="l">보장 만기</div><div class="v">80세</div></div>
+</div>
+
+<div class="section-label">납입 및 보장 타임라인</div>
+<div class="tl">
+  <div class="tl-seg" style="left:0;width:32%;background:#1D9E75;font-size:11px;color:#04342C">납입완료 16년</div>
+  <div class="tl-seg" style="left:32%;width:8%;background:#BA7517;font-size:10px;color:#412402">4년</div>
+  <div class="tl-seg" style="left:40%;width:60%;background:#d3d1c7;font-size:11px;color:#5f5e5a">보험료 없이 보장 30년</div>
+</div>
+<div class="tl-ages">
+  <span style="left:0">30세</span>
+  <span style="left:32%;transform:translateX(-50%);color:#BA7517;font-weight:500">▲ 46세 현재</span>
+  <span style="left:40%;transform:translateX(-50%)">50세</span>
+  <span style="right:0">80세</span>
+</div>
+
+<div class="concept">
+  납입기간(30→50세)에 낸 보험료는 <strong>80세까지의 보장 전체를 위해 미리 받아둔 돈</strong>입니다.<br>
+  납입이 끝난 50세부터는 쌓아둔 준비금에서 매월 <em>위험보험료 + 유지비</em>를 차감하며 보장이 이어지고, 80세에 준비금이 소진됩니다.
+</div>
+
+<div class="section-label">연령별 준비금 잔액 변화</div>
+<div class="chart-wrap">
+  <canvas id="rc" role="img" aria-label="30세 가입 후 50세 납입종료까지 준비금이 쌓이고 80세에 소진되는 차트"></canvas>
+</div>
+
+<div class="slider-row">
+  <label>연령 선택</label>
+  <input type="range" min="30" max="80" value="46" step="1" id="sl">
+  <span id="slLbl">46세</span>
+</div>
+
+<div class="dp" id="dp"></div>
+
+<div class="legend">
+  <span><span class="leg-dot" style="background:#1D9E75"></span>납입기간 — 준비금 적립</span>
+  <span><span class="leg-dot" style="background:#D85A30"></span>보장기간 — 준비금 차감</span>
+  <span><span class="leg-dot" style="background:#BA7517"></span>현재 선택 연령</span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<script>
+const PREM=50000,RB=6400,RK=0.003,ADM=2000,START=30,PAYEND=50,COVEND=80;
+
+const ydata=[{age:30,res:0}];
+let accumRes=0;
+for(let m=1;m<=600;m++){
+  const age=START+m/12;
+  const risk=RB*Math.exp(RK*m);
+  accumRes+=age<=PAYEND?(PREM-risk-ADM):-(risk+ADM);
+  if(m%12===0) ydata.push({age:START+m/12,res:Math.max(0,Math.round(accumRes))});
+}
+
+const getRisk=age=>Math.round(RB*Math.exp(RK*(age-START)*12));
+const getRes=age=>(ydata.find(d=>d.age===age)||{res:0}).res;
+
+let curAge=46;
+
+const bgPlug={
+  id:'bg',
+  beforeDatasetsDraw(ch){
+    const{ctx,chartArea:ca,scales}=ch;
+    if(!ca)return;
+    const x50=scales.x.getPixelForValue(50);
+    ctx.save();
+    ctx.fillStyle='rgba(29,158,117,0.09)';
+    ctx.fillRect(ca.left,ca.top,x50-ca.left,ca.height);
+    ctx.fillStyle='rgba(216,90,48,0.07)';
+    ctx.fillRect(x50,ca.top,ca.right-x50,ca.height);
+    ctx.restore();
+  },
+  afterDatasetsDraw(ch){
+    const{ctx,chartArea:ca,scales}=ch;
+    if(!ca)return;
+    const vline=(xv,color,lbl)=>{
+      const xp=scales.x.getPixelForValue(xv);
+      ctx.save();
+      ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.setLineDash([4,4]);
+      ctx.beginPath();ctx.moveTo(xp,ca.top);ctx.lineTo(xp,ca.bottom);ctx.stroke();
+      ctx.setLineDash([]);
+      if(lbl){ctx.fillStyle=color;ctx.font='500 10px -apple-system,sans-serif';ctx.fillText(lbl,xp+4,ca.top+13);}
+      ctx.restore();
+    };
+    vline(50,'#1D9E75','납입종료 50세');
+    if(curAge!==50) vline(curAge,'#BA7517',`▶ ${curAge}세`);
+  }
+};
+
+const chart=new Chart(document.getElementById('rc'),{
+  type:'line',plugins:[bgPlug],
+  data:{datasets:[
+    {label:'납입기간',
+     data:ydata.filter(d=>d.age<=PAYEND).map(d=>({x:d.age,y:Math.round(d.res/10000)})),
+     borderColor:'#1D9E75',backgroundColor:'rgba(29,158,117,0.14)',
+     fill:true,tension:0.35,pointRadius:0,borderWidth:2.5},
+    {label:'보장기간',
+     data:ydata.filter(d=>d.age>=PAYEND).map(d=>({x:d.age,y:Math.round(d.res/10000)})),
+     borderColor:'#D85A30',backgroundColor:'rgba(216,90,48,0.11)',
+     fill:true,tension:0.35,pointRadius:0,borderWidth:2.5},
+    {label:'선택연령',data:[],
+     borderColor:'#BA7517',backgroundColor:'#BA7517',
+     pointRadius:7,pointHoverRadius:8,showLine:false}
+  ]},
+  options:{
+    responsive:true,maintainAspectRatio:false,
+    plugins:{legend:{display:false},
+      tooltip:{callbacks:{label:item=>`준비금: ${(item.raw.y||0).toLocaleString()}만원`}}},
+    scales:{
+      x:{type:'linear',min:30,max:80,
+        ticks:{color:'#888',stepSize:10,callback:v=>v+'세'},
+        grid:{color:'rgba(0,0,0,0.06)'}},
+      y:{min:0,
+        ticks:{color:'#888',callback:v=>v+'만'},
+        title:{display:true,text:'준비금 (만원)',font:{size:10},color:'#888'},
+        grid:{color:'rgba(0,0,0,0.06)'}}
+    }
+  }
+});
+
+function upChart(age){
+  curAge=age;
+  const rv=getRes(age);
+  chart.data.datasets[2].data=[{x:age,y:Math.round(rv/10000)}];
+  chart.update('none');
+}
+
+function upPanel(age){
+  const rv=getRes(age);
+  const risk=getRisk(age);
+  const resMW=Math.round(rv/10000);
+  const isPay=age<PAYEND;
+  const dp=document.getElementById('dp');
+  const bar=(v,max,color)=>`<div class="bar-fill" style="width:${Math.min(120,Math.round(v/max*120))}px;background:${color}"></div>`;
+
+  if(isPay){
+    const net=PREM-risk-ADM;
+    dp.innerHTML=`
+    <div>
+      <div class="dl">${age}세 시점 준비금 잔액</div>
+      <div class="dv" style="color:#1D9E75">${resMW.toLocaleString()}만원</div>
+      <div style="font-size:11px;color:#73726c">해약환급금의 기초가 되는 금액</div>
+    </div>
+    <div>
+      <div class="dl">월 납입 ${PREM.toLocaleString()}원의 구조</div>
+      <div class="bar-row"><span class="bar-label">위험보험료</span>${bar(risk,PREM,'#D85A30')}<span>${risk.toLocaleString()}원</span></div>
+      <div class="bar-row"><span class="bar-label">유지비</span>${bar(ADM,PREM,'#aaa')}<span>${ADM.toLocaleString()}원</span></div>
+      <div class="bar-row"><span class="bar-label" style="color:#1D9E75;font-weight:500">준비금 적립</span>${bar(net,PREM,'#1D9E75')}<span style="color:#1D9E75;font-weight:500">+${net.toLocaleString()}원</span></div>
+      <hr class="divider">
+      <div style="font-size:11px;color:#73726c">납입보험료 = 위험보험료 + 유지비 + 준비금 적립</div>
+    </div>`;
+  } else {
+    const total=risk+ADM;
+    const mx=Math.max(total,20000);
+    dp.innerHTML=`
+    <div>
+      <div class="dl">${age}세 시점 준비금 잔액</div>
+      <div class="dv" style="color:${resMW>0?'#D85A30':'#888'}">${resMW.toLocaleString()}만원</div>
+      <div style="font-size:11px;color:#73726c">해약환급금의 기초가 되는 금액</div>
+    </div>
+    <div>
+      <div class="dl">이 시점 월 준비금 자동 차감 구조</div>
+      <div class="bar-row"><span class="bar-label">위험보험료</span>${bar(risk,mx,'#D85A30')}<span>${risk.toLocaleString()}원</span></div>
+      <div class="bar-row"><span class="bar-label">유지비</span>${bar(ADM,mx,'#aaa')}<span>${ADM.toLocaleString()}원</span></div>
+      <hr class="divider">
+      <div class="total-line" style="color:#D85A30">월 총 차감 ${total.toLocaleString()}원</div>
+      <div style="font-size:11px;color:#73726c;margin-top:3px">보험료 납입 없이 준비금에서 자동 차감 → 나이 들수록 차감액 증가</div>
+    </div>`;
+  }
+}
+
+upChart(46);upPanel(46);
+
+document.getElementById('sl').addEventListener('input',function(){
+  const age=parseInt(this.value);
+  document.getElementById('slLbl').textContent=age+'세';
+  upChart(age);upPanel(age);
+});
+</script>
+</body>
+</html>
